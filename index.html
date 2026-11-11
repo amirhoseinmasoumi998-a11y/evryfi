@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Evryfi | Biometric Shield</title>
+    <style>
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif; }
+        body { background-color: #0B1120; color: #FFFFFF; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: #1E293B; border: 1px solid #334155; border-radius: 16px; padding: 20px; width: 100%; max-width: 400px; margin-bottom: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); }
+        h2 { color: #38BDF8; margin-top: 0; text-align: center; }
+        input, select { width: 100%; padding: 12px; margin: 8px 0 16px 0; background: #0F172A; border: 1px solid #334155; color: white; border-radius: 10px; font-size: 15px; outline: none; }
+        input:focus { border-color: #38BDF8; }
+        button { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn-blue { background: #0284C7; color: white; }
+        .btn-green { background: #059669; color: white; margin-bottom: 12px; }
+        .btn-red { background: #DC2626; color: white; }
+        #status-box { text-align: center; padding: 12px; border-radius: 10px; margin-top: 12px; background: #0F172A; color: #94A3B8; font-size: 14px; }
+        #auth-modal { display: none; position: fixed; inset: 0; background: rgba(11, 17, 32, 0.98); z-index: 1000; padding: 25px; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🛡️ Evryfi</h2>
+        <label>شماره موبایل شما:</label>
+        <input type="tel" id="myPhone" placeholder="09121111111">
+        <button class="btn-blue" onclick="connect()" id="connectBtn">فعال‌سازی هویت بیومتریک گوشی</button>
+    </div>
+
+    <div class="card" id="reqCard" style="opacity: 0.4; pointer-events: none;">
+        <h3 style="margin-top:0; color:#F8FAFC;">ارسال استعلام اصالت</h3>
+        <label>شماره فرد مشکوک:</label>
+        <input type="tel" id="targetPhone" placeholder="09122222222">
+        <label>نوع درخواست مشکوک:</label>
+        <select id="reqType">
+            <option value="انتقال وجه / واریز پول">💰 انتقال وجه / واریز پول</option>
+            <option value="ارسال فایل یا سند محرمانه">📁 ارسال فایل یا سند محرمانه</option>
+            <option value="ارسال عکس یا فیلم شخصی">🖼️ ارسال عکس یا فیلم شخصی</option>
+            <option value="درخواست دسترسی یا رمز عبور">🔑 درخواست دسترسی یا رمز عبور</option>
+        </select>
+        <label>شرح تقاضا:</label>
+        <input type="text" id="reqDetail" placeholder="مثلا: ۵۰ میلیون تومان">
+        <button class="btn-blue" onclick="sendAuthRequest()">ارسال استعلام اثر انگشت</button>
+        <div id="status-box">دستگاه متصل نیست.</div>
+    </div>
+
+    <div id="auth-modal">
+        <div style="font-size: 60px; margin-bottom: 15px;">🚨</div>
+        <h2 style="color: #F87171;">استعلام فوری اصالت!</h2>
+        <p id="modalDesc" style="line-height: 1.6; margin-bottom: 25px;"></p>
+        <button class="btn-green" onclick="verifyBiometric()">👆 لمس اثر انگشت / FaceID</button>
+        <button class="btn-red" onclick="rejectAuth()">⛔ کلاهبرداری است (رد درخواست)</button>
+    </div>
+
+    <script>
+        let ws;
+        let requesterPhone = "";
+
+        function connect() {
+            const phone = document.getElementById("myPhone").value.trim();
+            if (!phone) return alert("شماره موبایل را وارد کنید");
+            const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+            ws = new WebSocket(`${protocol}${window.location.host}/ws/${phone}`);
+
+            ws.onopen = () => {
+                document.getElementById("connectBtn").innerText = "✅ متصل شد";
+                document.getElementById("connectBtn").style.background = "#059669";
+                document.getElementById("reqCard").style.opacity = "1";
+                document.getElementById("reqCard").style.pointerEvents = "auto";
+                document.getElementById("status-box").innerText = "سیستم آماده است.";
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.event === "auth_challenge") {
+                    requesterPhone = data.from;
+                    document.getElementById("modalDesc").innerHTML = 
+                        `شماره <b>${data.from}</b> مدعی است شما تقاضای زیر را داشته‌اید:<br><br>` +
+                        `<span style="color:#38BDF8; font-size:17px;"><b>${data.title}</b></span><br>` +
+                        `توضیح: <b>${data.amount}</b><br><br>` +
+                        `جهت تایید، حسگر اثر انگشت گوشی را لمس کنید:`;
+                    document.getElementById("auth-modal").style.display = "flex";
+                } else if (data.event === "auth_success") {
+                    const box = document.getElementById("status-box");
+                    box.style.background = "#064E3B";
+                    box.style.color = "#34D399";
+                    box.innerHTML = `✅ <b>تایید شد!</b> هویت با اثر انگشت فیزیکی احراز گردید.<br><small>امضا: ${data.signature}</small>`;
+                } else if (data.event === "auth_failed") {
+                    const box = document.getElementById("status-box");
+                    box.style.background = "#7F1D1D";
+                    box.style.color = "#FCA5A5";
+                    box.innerHTML = `⛔ <b>هشدار دیپ‌فیک!</b> درخواست رد شد. هیچ اقدامی نکنید!`;
+                } else if (data.event === "error") {
+                    alert(data.msg);
+                }
+            };
+        }
+
+        function sendAuthRequest() {
+            const target = document.getElementById("targetPhone").value.trim();
+            const title = document.getElementById("reqType").value;
+            const amount = document.getElementById("reqDetail").value.trim();
+            if (!target || !amount) return alert("اطلاعات را کامل کنید");
+
+            ws.send(JSON.stringify({ action: "request_auth", target: target, title: title, amount: amount }));
+            document.getElementById("status-box").innerText = "⏳ درخواست ارسال شد. منتظر اثر انگشت طرف مقابل...";
+        }
+
+        async function verifyBiometric() {
+            try {
+                const challenge = new Uint8Array(32);
+                window.crypto.getRandomValues(challenge);
+                await navigator.credentials.create({
+                    publicKey: {
+                        challenge: challenge,
+                        rp: { name: "Evryfi Security" },
+                        user: { id: new Uint8Array(16), name: "user", displayName: "Owner" },
+                        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+                        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+                        timeout: 60000
+                    }
+                });
+                const sig = "EVRYFI-" + Math.random().toString(36).substring(2, 9).toUpperCase();
+                ws.send(JSON.stringify({ action: "auth_approved", requester: requesterPhone, signature: sig }));
+                document.getElementById("auth-modal").style.display = "none";
+            } catch (err) {
+                alert("❌ اثر انگشت تایید نشد!");
+            }
+        }
+
+        function rejectAuth() {
+            ws.send(JSON.stringify({ action: "auth_rejected", requester: requesterPhone }));
+            document.getElementById("auth-modal").style.display = "none";
+        }
+    </script>
+</body>
+</html>
